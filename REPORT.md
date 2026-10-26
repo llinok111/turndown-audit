@@ -188,6 +188,33 @@ measured (unique colours, luminance distribution) so "the page painted" is
 checked rather than assumed. Demo colour pairs were computed against WCAG AA; the
 lowest is 5.75:1.
 
+The same 21 assertions were then run against the deployment
+(`--url https://llinok111.github.io/turndown-audit/`) and passed, which shows the
+published page is the one that was verified rather than merely a 200 response.
+
+CI, on the pushed commit — every job passed:
+
+```
+success  node 18 on ubuntu-latest      success  node 18 on windows-latest
+success  node 20 on ubuntu-latest      success  node 20 on windows-latest
+success  node 22 on ubuntu-latest      success  node 22 on windows-latest
+success  demo bundle is reproducible
+success  src/ matches upstream
+```
+
+Two consequences worth stating plainly:
+
+- The `engines.node >=18` claim is now backed by runs on Node 18, not only by the
+  Node 22 used during development. Whether that mattered here is not asserted —
+  the point is that the check now exists.
+- `src/ matches upstream` compares the `src/` tree before and after this fork's
+  commits, so the central claim of the report fails the build if it ever stops
+  being true.
+
+Upstream's own `Test` workflow (`node 18/20/21`, `npm ci` + `npm test`) also
+passed on both pushes, unmodified — evidence that the fork did not break the
+project's existing CI.
+
 Timing, measured on this machine (Node 22, Windows; median of 5 runs over 20
 documents): **14.2 ms per document**, ≈ 10.9 MB/s. The individual runs were
 11.4 / 12.9 / 14.2 / 16.4 / 16.8 ms — a 1.5× spread, which is why the median is
@@ -224,6 +251,16 @@ Listed because they are the reason several design choices exist.
    `# not a heading` are correctly escaped by turndown, so the audit staying silent
    is right. The evidence file now records them as must-be-silent cases, and the
    commit history shows the correction.
+8. **The licence stopped being recognised as MIT.** Adding explanatory paragraphs
+   between the copyright line and the permission text broke the template match, and
+   GitHub reported the repository licence as `NOASSERTION`. Found by reading the API
+   response after the first push rather than assuming the file was fine. Fixed by
+   restoring the verbatim template with both copyright lines and moving the
+   explanation into `NOTICE.md`.
+9. **The archive shipped build output.** The first ZIP contained `lib/` and `dist/`,
+   because they exist on disk after `npm install`. Including them would let a stale
+   bundle stand in for a build that no longer works, so the packager now excludes
+   them and the documented `npm install` step regenerates them.
 
 ## 8. Differences from upstream
 
@@ -241,9 +278,6 @@ Listed because they are the reason several design choices exist.
 
 ## 9. Not done / not verified
 
-- **Nothing was published to GitHub from this environment yet.** The repository and
-  ZIP are prepared locally; publishing requires the account step described in
-  section 10.
 - **No performance comparison against upstream** (see section 6).
 - **The audit judges the CommonMark + GFM rendering.** A consumer using a different
   dialect would need the findings re-measured against that renderer; the demo and
@@ -261,14 +295,18 @@ Listed because they are the reason several design choices exist.
   not line coverage.
 - The demo bundle is ~736 KB because it inlines the CommonMark pipeline. It makes no
   network requests, but it is heavy for a documentation page.
+- **No GitHub release or tag was created.** The repository and the ZIP are the
+  deliverables; nothing upstream was offered a patch.
 
 ## 10. Delivery artefacts
 
 | Artefact | Location |
 |---|---|
+| Repository (public) | https://github.com/llinok111/turndown-audit |
+| Live demo | https://llinok111.github.io/turndown-audit/ |
 | Full source (fork with upstream history) | `turndown-audit/` in this workspace |
 | Downloadable ZIP | `turndown-audit-0.1.0.zip` |
-| Licence | `LICENSE` (MIT, both copyright lines) |
+| Licence | `LICENSE` (MIT, both copyright lines, verbatim template) |
 | Attribution and fork point | `NOTICE.md` |
 | Install / run / API / limitations | `README.md` |
 | This report | `REPORT.md` |
@@ -276,21 +314,22 @@ Listed because they are the reason several design choices exist.
 To reproduce from the ZIP:
 
 ```console
-unzip turndown-audit-0.1.0.zip && cd turndown-audit
-npm install          # builds lib/ through the upstream prepare script
+unzip turndown-audit-0.1.0.zip && cd turndown-audit-0.1.0
+npm install          # or npm ci; builds lib/ through the upstream prepare script
 npm run test:audit   # 40 assertions
 npm run evidence     # 36 corpora
 npm test             # upstream suite, unchanged
 ```
 
-To publish (not performed here):
+The archive keeps `.git`, so the fork point and the "src/ is untouched" claim can
+be checked directly:
 
 ```console
-git remote add origin git@github.com:<account>/turndown-audit.git
-git branch -M main
-git push -u origin main
+git log --oneline -- src/        # only upstream commits
+node scripts/check-src-untouched.mjs
 ```
 
-Push over SSH: `github.com:443` was not reachable from this environment for git
-operations, while `api.github.com` and `ssh.github.com:443` were, so an HTTPS
-clone or push may need adjusting.
+Delivered archive: 158 entries, 5.02 MB,
+`sha256 5e8ff7066e68a7e7c4074e896a98ccf3a80a83b932cb31c00292838f14e701b4`.
+The hash identifies this snapshot; it changes if the archive is rebuilt after a new
+commit, because `.git` is part of it.

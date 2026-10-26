@@ -1,5 +1,7 @@
 # turndown-audit
 
+[![CI](https://github.com/llinok111/turndown-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/llinok111/turndown-audit/actions/workflows/ci.yml)
+
 An audit layer for [turndown](https://github.com/mixmark-io/turndown): it converts
 HTML to Markdown, renders the result **back** with an independent CommonMark + GFM
 implementation, and reports what the round trip actually lost.
@@ -7,6 +9,8 @@ implementation, and reports what the round trip actually lost.
 turndown is a good converter with no way to tell you when it silently drops
 something. This fork adds that: a measured, per-construct report of what a
 conversion destroys, with a remedy that is verified before it is offered.
+
+Try it on your own HTML: **https://llinok111.github.io/turndown-audit/**
 
 ```console
 $ npx turndown-audit page.html

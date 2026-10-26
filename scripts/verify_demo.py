@@ -1,19 +1,20 @@
 #!/usr/bin/env python
 """Browser verification for the turndown-audit demo page.
 
-Loads demo/index.html over file://, drives the real UI, and asserts on the
-rendered DOM. Screenshots are written to shots/verify/ for visual inspection.
+By default the local file is driven over file://. Pass --url to run the same
+assertions against a deployed copy instead, which is how a deployment is shown
+to serve the page that was actually verified rather than merely returning 200.
 
     python scripts/verify_demo.py
+    python scripts/verify_demo.py --url https://llinok111.github.io/turndown-audit/
 
-Exit code 0 means every assertion held. The script prints what it checked so the
-result can be read without trusting it.
+Screenshots are written to shots/verify/ for visual inspection. Exit code 0
+means every assertion held. The script prints what it checked so the result can
+be read without trusting it.
 """
 
 from __future__ import annotations
 
-import json
-import os
 import sys
 from pathlib import Path
 
@@ -26,15 +27,30 @@ SHOTS = ROOT / "shots" / "verify"
 RESULTS: list[tuple[bool, str, str]] = []
 
 
+def parse_args(argv: list[str]) -> str | None:
+    """Return the --url value, or None to use the local file."""
+    if "--url" in argv:
+        i = argv.index("--url")
+        if i + 1 >= len(argv):
+            print("--url needs a value")
+            sys.exit(2)
+        return argv[i + 1]
+    return None
+
+
 def check(ok: bool, name: str, detail: str = "") -> None:
     RESULTS.append((bool(ok), name, detail))
     print(("ok   " if ok else "FAIL ") + name + ("  | " + detail if detail else ""))
 
 
 def main() -> int:
-    if not DEMO.exists():
+    url = parse_args(sys.argv[1:])
+    if url is None and not DEMO.exists():
         print("demo/index.html not found; run from the repository root")
         return 2
+    target = url if url else DEMO.as_uri()
+    label = "deployed: " + url if url else "local file: " + DEMO.name
+    print(f"target: {label}\n")
 
     SHOTS.mkdir(parents=True, exist_ok=True)
     console_errors: list[str] = []
@@ -46,8 +62,8 @@ def main() -> int:
         page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
         page.on("pageerror", lambda e: page_errors.append(str(e)))
 
-        page.goto(DEMO.as_uri())
-        page.wait_for_selector("#findings li", timeout=15000)
+        page.goto(target, wait_until="load")
+        page.wait_for_selector("#findings li", timeout=20000)
 
         check(not page_errors, "no uncaught page errors", "; ".join(page_errors[:3]))
         check(not console_errors, "no console errors", "; ".join(console_errors[:3]))
