@@ -329,13 +329,18 @@ git log --oneline -- src/        # only upstream commits
 node scripts/check-src-untouched.mjs
 ```
 
-Delivered archive: 158 entries, 5.02 MB. Its SHA-256 is published next to the
-archive as `turndown-audit-0.1.0.zip.sha256` in the standard `sha256sum` format:
+Delivered archive: about 5 MB. Its manifest and SHA-256 are produced by
+`scripts/package.py`, and the digest is published next to the archive as
+`turndown-audit-0.1.0.zip.sha256` in the standard `sha256sum` format:
 
 ```console
 sha256sum -c turndown-audit-0.1.0.zip.sha256
 ```
 
-The digest is deliberately not written into this file. The archive contains this
-report, so a hard-coded digest would be stale the moment the archive was rebuilt;
-a sidecar file cannot become self-contradictory.
+Neither the entry count nor the digest is written into this file. The archive
+contains this report, so a hard-coded value would be stale the moment the archive
+was rebuilt; a sidecar file cannot become self-contradictory.
+
+The archive's content was compared file by file against the repository with
+`diff -r`, excluding only `lib/`, `dist/`, `node_modules/` and the generated
+screenshots, and the two trees are identical.
