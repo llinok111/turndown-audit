@@ -1,0 +1,21 @@
+# Normalise all text files to LF in the working tree and the index.
+# Every file in this repository is stored with LF; without this rule a Windows
+# checkout converts the working copy to CRLF, so `git diff` keeps reporting
+# changes to files nobody edited.
+* text=auto eol=lf
+
+# Binary assets must never be line-ending converted.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.zip binary
+*.woff binary
+*.woff2 binary
+
+# Lockfiles and generated bundles are compared as text, but keep them quiet in
+# diffs since they are regenerated.
+package-lock.json -diff
+demo/turndown-audit.bundle.js -diff

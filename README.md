@@ -1,8 +1,185 @@
-# Turndown
+# turndown-audit
 
-Convert HTML into Markdown with JavaScript.
+An audit layer for [turndown](https://github.com/mixmark-io/turndown): it converts
+HTML to Markdown, renders the result **back** with an independent CommonMark + GFM
+implementation, and reports what the round trip actually lost.
 
-See it in action [online](https://mixmark-io.github.io/turndown/).
+turndown is a good converter with no way to tell you when it silently drops
+something. This fork adds that: a measured, per-construct report of what a
+conversion destroys, with a remedy that is verified before it is offered.
+
+```console
+$ npx turndown-audit page.html
+
+page.html
+  high  1 rendered text token(s) from the source are absent from the converted output: `OES_texture_float`  [text-loss]
+        evidence: {"missingTokens":[{"token":"OES_texture_float","missing":1}],"totalMissing":1}
+        see: https://spec.commonmark.org/0.31.2/
+  med   1 <iframe> element(s) reduced to plain text  [element-flattened]
+        evidence: {"tag":"IFRAME","missing":1,"examples":[]}
+        note: no Markdown/GFM syntax expresses this; use keep() for this tag
+  2 finding(s): 1 high, 1 medium, 0 low
+$ echo $?
+1
+```
+
+## Why this exists
+
+`grep -rniE "loss|lossy|fidelity|roundtrip" src/` in upstream turndown returns
+nothing. The library cannot tell you that `<sup>2</sup>` became `2`, that a
+`colspan` disappeared, or that the text after a `|` inside a table cell was
+dropped. Those losses are real and measured in this repository — `REPORT.md` has
+the numbers and the corpus they came from.
+
+The audit does **not** change how turndown converts. `src/` is byte-identical to
+upstream and every change lives in `audit/`, `bin/`, `scripts/` and `demo/`. That
+is what makes the measurements meaningful: they describe the library as shipped.
+
+## Install
+
+```console
+npm install
+```
+
+`npm install` builds `lib/` through the upstream `prepare` script, which the audit
+reads at runtime.
+
+## Use
+
+### Command line
+
+```console
+npx turndown-audit <file.html | ->  [more files...]
+
+  --keep <tag,tag,...>   preserve these tags as raw HTML (turndown keep())
+  --json                 machine-readable report on stdout
+  --statistics           include the source/output inventories in the JSON report
+  --quiet                only print findings, suppress the summary
+  -h, --help             show the message above
+```
+
+Exit codes are the CI contract:
+
+| Code | Meaning |
+|---|---|
+| 0 | clean — no medium or high findings |
+| 1 | findings present |
+| 2 | usage error (bad flag, unreadable file) |
+| 3 | the audit itself failed |
+
+### Library
+
+```js
+import { audit } from 'turndown-audit/audit/index.mjs'
+import { gfm } from 'turndown-plugin-gfm'
+import { suggestFixes } from 'turndown-audit/audit/fixes.mjs'
+
+const report = audit(html, { plugins: [gfm] })
+
+report.markdown    // what turndown produced
+report.rerendered  // that Markdown, rendered back to HTML independently
+report.findings    // ordered worst first
+report.counts      // { high, medium, low, total }
+report.clean       // true when nothing medium/high was found
+
+// Remedies that were applied and re-measured, not guesses:
+const { effective } = suggestFixes(html, { plugins: [gfm] })
+// effective[i].before / .after  → finding counts before and after the fix
+// effective[i].markdown        → the output with the fix applied
+```
+
+### Demo
+
+`demo/index.html` runs the same audit code in the browser. Open the file
+directly — it makes no network requests. Rebuild it with:
+
+```console
+npx rollup -c config/rollup.config.demo.mjs
+```
+
+## What it checks
+
+Every finding comes from a difference measured on the *rendered* document, so it
+holds for any reader that implements CommonMark + GFM, not only for the one used
+here. `inherent: true` marks a construct the Markdown family cannot express;
+those are reported but never presented as fixable.
+
+| Code | Severity | What it means |
+|---|---|---|
+| `text-loss` | high | Rendered text from the source is absent from the output |
+| `element-dropped` | high | A content-bearing element was removed with nothing in its place |
+| `element-flattened` | medium | The text survived but the element that gave it meaning did not |
+| `table-cell-content-changed` | high | A cell reads differently — typically an unescaped `\|` splitting the row |
+| `table-shape-changed` | high | Row or column count changed, so cells sit in the wrong columns |
+| `table-span-flattened` | medium | `colspan`/`rowspan` — no GFM syntax exists *(inherent)* |
+| `preformatted-collapsed` | high | A `<pre>` with no `<code>` child matched neither code-block rule, so indentation and blank lines were lost |
+| `code-block-degraded` | medium | A declared code language was dropped (an indented block cannot carry one) |
+| `attribute-dropped` | medium | A meaningful attribute (`title`, `datetime`, `lang`, …) disappeared |
+| `image-target-changed` | high | An image `src`/`alt` or a link destination differs (percent-encoding is normalised away first) |
+| `markdown-injection` | high | Literal text was read as Markdown structure after conversion |
+| `heading-level-changed` | low | Heading depth sequence changed |
+| `list-structure-changed` | medium | List item count or nesting depth changed |
+
+## Verified fixes
+
+`suggestFixes()` tries the strategies below against a document, applies each one,
+re-runs the audit, and reports only those that measurably reduced the findings
+without introducing a new one.
+
+| Strategy | Addresses |
+|---|---|
+| `escape-table-pipes` | `table-cell-content-changed` |
+| `pre-without-code-is-a-code-block` | `preformatted-collapsed` |
+| `code-block-style-fenced` | `code-block-degraded` |
+| `keep-…` (sup, sub, mark, kbd, abbr, ins, del) | `element-flattened`, `attribute-dropped` |
+| `keep-…` (iframe, video, audio, canvas, object, embed) | `element-dropped` |
+| `keep-…` (dl, dt, dd, details, summary, figure, figcaption) | `element-flattened` |
+
+A finding with no effective strategy stays a finding. Nothing is reported as
+fixed on the strength of a claim.
+
+## Tests and evidence
+
+```console
+npm run test:audit        # audit, fixes and CLI assertions
+npm run evidence          # corpora whose expected outcome is declared in advance
+npm test                  # upstream turndown suite, unchanged
+node scripts/corpus.mjs <dir>           # audit a real corpus
+node scripts/review.mjs <dir>           # findings grouped by code
+node scripts/triage-text-loss.mjs <dir> # every missing token with its source context
+```
+
+`scripts/verify_demo.py` drives the demo in a real browser and writes screenshots
+to `shots/verify/`; `scripts/verify-screenshots.mjs` then decodes those PNGs and
+measures them, so "it rendered" is checked rather than assumed.
+
+## Known limitations
+
+- The audit judges the Markdown that a CommonMark + GFM renderer produces. A
+  consumer with a different dialect (CommonMark without GFM, MultiMarkdown, a
+  wiki syntax) may read the output differently; the findings would need
+  re-measuring against that renderer.
+- `text-loss` compares token multisets. It reports *that* text is missing and
+  shows the tokens; it does not attempt to name the element that dropped it when
+  several constructs could be responsible.
+- The browser demo bundles the CommonMark pipeline, so `demo/turndown-audit.bundle.js`
+  is larger than the library itself.
+- Performance is not a claim in this project. No throughput comparison against
+  upstream is made, because a meaningful one needs a controlled machine and is not
+  what the audit is for.
+
+## Licence
+
+MIT, the same terms as upstream. `LICENSE` carries both copyright lines;
+`NOTICE.md` records the fork point, what was added, and the licence of each added
+dependency.
+
+---
+
+# turndown (upstream documentation)
+
+The rest of this file is the upstream turndown documentation, kept so that this
+fork documents the library it audits. It is unchanged apart from this notice.
 
 ## Project Updates
 * `to-markdown` has been renamed to Turndown. See the [migration guide](https://github.com/domchristie/to-markdown/wiki/Migrating-from-to-markdown-to-Turndown) for details.
@@ -123,112 +300,57 @@ This will remove `<del>` elements (and contents).
 Use a plugin, or an array of plugins. Example:
 
 ```js
-// Import plugins from turndown-plugin-gfm
-var turndownPluginGfm = require('turndown-plugin-gfm')
-var gfm = turndownPluginGfm.gfm
-var tables = turndownPluginGfm.tables
-var strikethrough = turndownPluginGfm.strikethrough
+import TurndownService from 'turndown'
+import { gfm } from '@joplin/turndown-plugin-gfm'
 
-// Use the gfm plugin
+const turndownService = new TurndownService()
 turndownService.use(gfm)
-
-// Use the table and strikethrough plugins only
-turndownService.use([tables, strikethrough])
 ```
 
-`use` returns the `TurndownService` instance for chaining.
+### `turndown(input)`
 
-See **Plugins** below.
+Converts an HTML string or DOM node to Markdown.
 
 ## Extending with Rules
 
-Turndown can be extended by adding **rules**. A rule is a plain JavaScript object with `filter` and `replacement` properties. For example, the rule for converting `<p>` elements is as follows:
+Turndown can be extended by adding **rules**. A rule is a plain JavaScript object with `filter` and `replacement` properties. Rules may also have a `filter` property in the form of a function; this is useful for more complex filters.
 
 ```js
-{
-  filter: 'p',
+turndownService.addRule('strikethrough', {
+  filter: ['del', 's', 'strike'],
   replacement: function (content) {
-    return '\n\n' + content + '\n\n'
+    return '~' + content + '~'
   }
-}
+})
 ```
-
-The filter selects `<p>` elements, and the replacement function returns the `<p>` contents separated by two new lines.
-
-### `filter` String|Array|Function
-
-The filter property determines whether or not an element should be replaced with the rule's `replacement`. DOM nodes can be selected simply using a tag name or an array of tag names:
-
- * `filter: 'p'` will select `<p>` elements
- * `filter: ['em', 'i']` will select `<em>` or `<i>` elements
-
-The tag names in the `filter` property are expected in lowercase, regardless of their form in the document.
-
-Alternatively, the filter can be a function that returns a boolean depending on whether a given node should be replaced. The function is passed a DOM node as well as the `TurndownService` options. For example, the following rule selects `<a>` elements (with an `href`) when the `linkStyle` option is `inlined`:
-
-```js
-filter: function (node, options) {
-  return (
-    options.linkStyle === 'inlined' &&
-    node.nodeName === 'A' &&
-    node.getAttribute('href')
-  )
-}
-```
-
-### `replacement` Function
-
-The replacement function determines how an element should be converted. It should return the Markdown string for a given node. The function is passed the node's content, the node itself, and the `TurndownService` options.
-
-The following rule shows how `<em>` elements are converted:
-
-```js
-rules.emphasis = {
-  filter: ['em', 'i'],
-
-  replacement: function (content, node, options) {
-    return options.emDelimiter + content + options.emDelimiter
-  }
-}
-```
-
-### Special Rules
-
-**Blank rule** determines how to handle blank elements. It overrides every rule (even those added via `addRule`). A node is blank if it only contains whitespace, and it's not an `<a>`, `<td>`,`<th>` or a void element. Its behaviour can be customised using the `blankReplacement` option.
-
-**Keep rules** determine how to handle the elements that should not be converted, i.e. rendered as HTML in the Markdown output. By default, no elements are kept. Block-level elements will be separated from surrounding content by blank lines. Its behaviour can be customised using the `keepReplacement` option.
-
-**Remove rules** determine which elements to remove altogether. By default, no elements are removed.
-
-**Default rule** handles nodes which are not recognised by any other rule. By default, it outputs the node's text content (separated  by blank lines if it is a block-level element). Its behaviour can be customised with the `defaultReplacement` option.
-
-### Rule Precedence
-
-Turndown iterates over the set of rules, and picks the first one that matches the `filter`. The following list describes the order of precedence:
-
-1. Blank rule
-2. Added rules (optional)
-3. Commonmark rules
-4. Keep rules
-5. Remove rules
-6. Default rule
 
 ## Plugins
 
-The plugin API provides a convenient way for developers to apply multiple extensions. A plugin is just a function that is called with the `TurndownService` instance.
+Plugins are functions that add rules:
+
+```js
+function myPlugin (turndownService) {
+  turndownService.addRule(...)
+}
+turndownService.use(myPlugin)
+```
+
+See the [plugins section](https://github.com/mixmark-io/turndown#plugins) in the
+upstream repository for community plugins, including
+`turndown-plugin-gfm` which adds GFM tables, strikethrough, task list items and
+highlighted code blocks.
 
 ## Escaping Markdown Characters
 
-Turndown uses backslashes (`\`) to escape Markdown characters in the HTML input. This ensures that these characters are not interpreted as Markdown when the output is compiled back to HTML. For example, the contents of `<h1>1. Hello world</h1>` needs to be escaped to `1\. Hello world`, otherwise it will be interpreted as a list item rather than a heading.
+Turndown uses backslashes to escape Markdown characters in text and attribute values. It is not an exhaustive escape routine, but it aims to escape characters that would otherwise change the meaning of the output.
 
-To avoid the complexity and the performance implications of parsing the content of every HTML element as Markdown, Turndown uses a group of regular expressions to escape potential Markdown syntax. As a result, the escaping rules can be quite aggressive.
+## Escaping and the audit
 
-### Overriding `TurndownService.prototype.escape`
-
-If you are confident in doing so, you may want to customise the escaping behaviour to suit your needs. This can be done by overriding `TurndownService.prototype.escape`. `escape` takes the text of each HTML element and should return a version with the Markdown characters escaped.
-
-Note: text in code elements is never passed to`escape`.
+Because turndown escapes text, some audit findings are about how an escape and a
+renderer interact rather than about a missing character. `text-loss` reports the
+token that changed and shows the source context, so the cause can be judged from
+the output rather than assumed.
 
 ## License
 
-turndown is copyright © 2017+ Dom Christie and released under the MIT license.
+MIT

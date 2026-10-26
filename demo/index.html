@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>turndown-audit — what did the conversion lose?</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f1115;
+    --panel: #161a21;
+    --panel-2: #1d222b;
+    --line: #2a313d;
+    --text: #e6e9ef;
+    --muted: #9aa4b2;
+    --high: #ff6b6b;
+    --medium: #ffb454;
+    --low: #7f8b9c;
+    --ok: #5ad19a;
+    --accent: #7aa2f7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.55 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  header {
+    padding: 20px 24px 14px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  h1 { margin: 0 0 6px; font-size: 19px; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); max-width: 78ch; font-size: 13px; }
+  code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+  .col { background: var(--bg); padding: 16px 18px 22px; min-width: 0; }
+  .col h2 {
+    margin: 0 0 10px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  textarea {
+    width: 100%; min-height: 210px; resize: vertical;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 12px;
+    font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .row { display: flex; gap: 8px; margin: 10px 0 16px; align-items: center; flex-wrap: wrap; }
+  button {
+    background: var(--accent); color: #0b0f16; border: 0; border-radius: 7px;
+    padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 9px;
+    padding: 12px 14px; margin-bottom: 12px;
+  }
+  .card > h3 {
+    margin: 0 0 8px; font-size: 12px; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+  }
+  pre.out {
+    margin: 0; padding: 10px 12px; background: var(--panel-2);
+    border-radius: 7px; overflow: auto; max-height: 240px;
+    font-size: 12.5px; white-space: pre-wrap; word-break: break-word;
+  }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li.finding { border-left: 3px solid var(--low); padding: 8px 0 8px 11px; margin-bottom: 9px; }
+  li.sev-high { border-left-color: var(--high); }
+  li.sev-medium { border-left-color: var(--medium); }
+  li.sev-low { border-left-color: var(--low); }
+  .finding-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 3px; }
+  .sev {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+    padding: 1px 7px; border-radius: 999px; background: var(--panel-2); color: var(--muted);
+  }
+  .sev-high .sev, li.sev-high .sev { background: rgba(255,107,107,.16); color: var(--high); }
+  li.sev-medium .sev { background: rgba(255,180,84,.16); color: var(--medium); }
+  .code { font-size: 12px; color: var(--text); }
+  .tag {
+    font-size: 10.5px; padding: 1px 7px; border-radius: 999px;
+    background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
+  }
+  .finding-msg { margin: 0; color: var(--text); font-size: 13px; }
+  .evidence {
+    margin: 6px 0 0; padding: 8px 10px; background: var(--panel-2); border-radius: 6px;
+    font-size: 11.5px; color: var(--muted); overflow: auto; max-height: 160px; white-space: pre-wrap;
+  }
+  li.none { color: var(--ok); font-size: 13px; }
+  li.fix { padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  li.fix:last-child { border-bottom: 0; }
+  .delta { color: var(--ok); font-size: 12px; margin-left: 6px; white-space: nowrap; }
+  .counts { font-weight: 600; font-size: 13px; }
+  footer { padding: 14px 24px 26px; color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--line); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>turndown-audit</h1>
+  <p>
+    Converts HTML to Markdown with turndown, renders the result back with an independent
+    CommonMark + GFM implementation, and reports what the round trip actually lost.
+    Nothing on this page talks to a server.
+  </p>
+</header>
+
+<main>
+  <section class="col" aria-labelledby="h-input">
+    <h2 id="h-input">Source HTML</h2>
+    <label for="input" class="mono" style="display:block;color:var(--muted);font-size:12px;margin-bottom:6px;">
+      Paste HTML, then run the audit.
+    </label>
+    <textarea id="input" spellcheck="false" aria-describedby="h-input"></textarea>
+    <div class="row">
+      <button id="run" type="button">Audit</button>
+      <button id="reset" type="button" class="ghost">Reset sample</button>
+      <span class="counts" id="counts" aria-live="polite"></span>
+    </div>
+    <div class="card">
+      <h3>Produced Markdown</h3>
+      <pre class="out" id="markdown"></pre>
+    </div>
+  </section>
+
+  <section class="col" aria-labelledby="h-out">
+    <h2 id="h-out">Re-rendered &amp; findings</h2>
+    <div class="card">
+      <h3>Markdown rendered back to HTML</h3>
+      <pre class="out" id="rerendered"></pre>
+    </div>
+    <div class="card">
+      <h3>Findings</h3>
+      <ul id="findings"></ul>
+    </div>
+    <div class="card">
+      <h3>Verified fixes</h3>
+      <ul id="fixes"></ul>
+    </div>
+  </section>
+</main>
+
+<footer>
+  A fix is listed only after it was applied and the audit re-run to confirm the finding
+  disappeared without introducing a new one. See <code>README.md</code> for the CLI and
+  <code>scripts/evidence.mjs</code> for the measured expectations.
+</footer>
+
+<script src="./turndown-audit.bundle.js"></script>
+</body>
+</html>

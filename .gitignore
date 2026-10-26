@@ -3,3 +3,11 @@ lib
 node_modules
 npm-debug.log
 test/*browser.js
+
+# Verification artefacts: screenshots produced by scripts/verify_demo.py.
+# They are regenerated on demand and are not part of the source.
+shots/
+
+# Scratch space used while investigating behaviour; not shipped.
+_probe/
+_tmp/

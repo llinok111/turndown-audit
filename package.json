@@ -6,6 +6,9 @@
   "main": "lib/turndown.cjs.js",
   "module": "lib/turndown.es.js",
   "jsnext:main": "lib/turndown.es.js",
+  "bin": {
+    "turndown-audit": "./bin/turndown-audit.mjs"
+  },
   "browser": {
     "@mixmark-io/domino": false,
     "./lib/turndown.cjs.js": "./lib/turndown.browser.cjs.js",
@@ -13,7 +16,13 @@
     "./lib/turndown.umd.js": "./lib/turndown.browser.umd.js"
   },
   "dependencies": {
-    "@mixmark-io/domino": "^2.2.0"
+    "@mixmark-io/domino": "^2.2.0",
+    "rehype-stringify": "^10.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
+    "turndown-plugin-gfm": "^1.0.2",
+    "unified": "^11.0.5"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
@@ -34,7 +43,9 @@
   },
   "files": [
     "lib",
-    "dist"
+    "dist",
+    "audit",
+    "bin"
   ],
   "keywords": [
     "converter",
@@ -54,6 +65,9 @@
     "build-iife": "rollup -c config/rollup.config.iife.mjs",
     "build-test": "rollup -c config/rollup.config.test.mjs",
     "prepare": "npm run build",
-    "test": "npm run build && npm run build-test && standard ./src/**/*.js && node test/internals-test.js && node test/turndown-test.js"
+    "test": "npm run build && npm run build-test && standard ./src/**/*.js && node test/internals-test.js && node test/turndown-test.js",
+    "test:audit": "node scripts/run-tests.mjs",
+    "test:all": "npm test && npm run test:audit",
+    "evidence": "node scripts/evidence.mjs"
   }
 }
