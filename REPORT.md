@@ -329,7 +329,13 @@ git log --oneline -- src/        # only upstream commits
 node scripts/check-src-untouched.mjs
 ```
 
-Delivered archive: 158 entries, 5.02 MB,
-`sha256 5e8ff7066e68a7e7c4074e896a98ccf3a80a83b932cb31c00292838f14e701b4`.
-The hash identifies this snapshot; it changes if the archive is rebuilt after a new
-commit, because `.git` is part of it.
+Delivered archive: 158 entries, 5.02 MB. Its SHA-256 is published next to the
+archive as `turndown-audit-0.1.0.zip.sha256` in the standard `sha256sum` format:
+
+```console
+sha256sum -c turndown-audit-0.1.0.zip.sha256
+```
+
+The digest is deliberately not written into this file. The archive contains this
+report, so a hard-coded digest would be stale the moment the archive was rebuilt;
+a sidecar file cannot become self-contradictory.

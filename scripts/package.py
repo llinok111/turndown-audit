@@ -113,10 +113,17 @@ def main() -> int:
     digest = hashlib.sha256(out.read_bytes()).hexdigest()
     size_mb = out.stat().st_size / (1024 * 1024)
 
+    # The digest goes in a sidecar file rather than into the archive: the archive
+    # contains REPORT.md, so a digest written there would be stale as soon as the
+    # archive was rebuilt.
+    sidecar = out.with_suffix(out.suffix + ".sha256")
+    sidecar.write_text(f"{digest}  {out.name}\n", encoding="utf-8")
+
     print(f"archive   : {out}")
     print(f"entries   : {len(names)}")
     print(f"size      : {size_mb:.2f} MB")
     print(f"sha256    : {digest}")
+    print(f"digest    : {sidecar.name}  (verify with `sha256sum -c`)")
     print()
     print("notable entries:")
     for r in required:
