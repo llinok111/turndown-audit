@@ -117,7 +117,10 @@ def main() -> int:
     # contains REPORT.md, so a digest written there would be stale as soon as the
     # archive was rebuilt.
     sidecar = out.with_suffix(out.suffix + ".sha256")
-    sidecar.write_text(f"{digest}  {out.name}\n", encoding="utf-8")
+    # newline="\n" is required: the default translation on Windows writes CRLF,
+    # and `sha256sum -c` then treats the trailing \r as part of the file name.
+    with open(sidecar, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(f"{digest}  {out.name}\n")
 
     print(f"archive   : {out}")
     print(f"entries   : {len(names)}")
