@@ -23,7 +23,12 @@ Everything under `audit/`, `bin/`, `scripts/`, `test/audit/`, `demo/`, and the
 this fork. Upstream source under `src/` is **unmodified**; the audit layer reads
 turndown through its public API only.
 
-The audit layer is licensed under the same MIT terms as upstream. See `LICENSE`.
+The audit layer is licensed under the same MIT terms as upstream. See `LICENSE`,
+which carries both copyright lines: the upstream notice for the turndown
+converter and its original test suite, and this fork's notice for the audit
+layer, its tests, its command line interface and its demo page. The explanatory
+text lives here rather than in `LICENSE` so that the licence file stays the
+verbatim MIT template and is recognised as such.
 
 ## Third-party runtime dependencies added by this fork
 

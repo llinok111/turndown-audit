@@ -1,0 +1,58 @@
+name: Pages
+
+# Publishes demo/ as a static site. The demo loads the committed bundle and
+# makes no network requests, so the deployment is the same file that the local
+# verification script drives.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install and rebuild the demo bundle
+        run: |
+          npm ci
+          npx rollup -c config/rollup.config.demo.mjs
+
+      - name: Fail if the committed bundle differs from the rebuilt one
+        run: |
+          git diff --exit-code -- demo/turndown-audit.bundle.js
+
+      - name: Drop the build-only sources from the published site
+        run: rm -f demo/main.mjs
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: demo
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

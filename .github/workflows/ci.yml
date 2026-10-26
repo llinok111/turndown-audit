@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # package.json declares engines.node >=18. A claim like that can only be
+  # checked by actually running on the declared minimum, so the matrix includes
+  # 18 as well as newer versions, on both a Linux and a Windows runner because
+  # path handling and shell globbing differ between them.
+  test:
+    name: node ${{ matrix.node }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install (builds lib/ through the upstream prepare script)
+        run: npm ci
+
+      - name: Upstream turndown suite (must be unaffected)
+        run: npm test
+
+      - name: Audit suite
+        run: npm run test:audit
+
+      - name: Declared-expectation corpora
+        run: npm run evidence
+
+      - name: CLI exit-code contract
+        run: node scripts/check-cli-contract.mjs
+
+  # The demo bundle is committed so the page works from a plain checkout. This
+  # job proves the committed bundle is the one the sources produce.
+  reproducible-bundle:
+    name: demo bundle is reproducible
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Rebuild and compare digests
+        run: |
+          before=$(sha1sum demo/turndown-audit.bundle.js | cut -d' ' -f1)
+          npx rollup -c config/rollup.config.demo.mjs
+          after=$(sha1sum demo/turndown-audit.bundle.js | cut -d' ' -f1)
+          echo "before=$before"
+          echo "after =$after"
+          test "$before" = "$after"
+
+  # Upstream source must stay untouched: the report rests on the claim that the
+  # measurements describe turndown as shipped. This compares the src/ tree
+  # before and after the fork's own commits, so any edit to src/ fails the build.
+  upstream-source-untouched:
+    name: src/ matches upstream
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compare src/ against the fork point
+        run: node scripts/check-src-untouched.mjs
